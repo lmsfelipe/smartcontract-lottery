@@ -1,4 +1,8 @@
-const { networkConfig, developmentChains } = require("../helper-hardhat-config")
+const {
+  networkConfig,
+  developmentChains,
+  VERIFICATION_BLOCK_CONFIRMATIONS,
+} = require("../helper-hardhat-config")
 const { verify } = require("../utils/verify")
 
 const VRF_SUB_FUND_AMOUNT = ethers.parseEther("2")
@@ -50,7 +54,7 @@ module.exports = async ({ getNamedAccounts, deployments, getChainId }) => {
     // gasLimit: 4000000,
     log: true,
     args,
-    waitConfirmations: network.config.blockConfirmations || 1,
+    waitConfirmations: isDevNetwork ? 1 : VERIFICATION_BLOCK_CONFIRMATIONS,
   })
 
   if (!isDevNetwork && process.env.ETHERSCAN_API_KEY) {

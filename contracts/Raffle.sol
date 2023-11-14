@@ -4,12 +4,11 @@ pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 
-import "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
-
-error Raffle__NotEnoughETHEntered();
+error Raffle__SendMoreToEnterRaffle();
 error Raffle__TransferFailed();
-error Raffle__NotOpen();
+error Raffle__RaffleNotOpen();
 error Raffle__UpkeepNotNeeded(
   uint256 currentBalance,
   uint256 numPlayers,
@@ -31,37 +30,37 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
   }
 
   /** State Variable */
-  uint256 private immutable i_entranceFee;
-  address payable[] private s_players;
   VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
   bytes32 private immutable i_gasLane;
   uint64 private immutable i_subscriptionId;
   uint32 private immutable i_callbackGasLimit;
-  uint32 private constant NUM_WORDS = 3;
+  uint32 private constant NUM_WORDS = 1;
   uint16 private constant REQUEST_CONFIRMATIONS = 3;
 
   // Lottery variables
-  address private s_recentWinner;
-  RaffleState private s_raffleState;
-  uint256 private s_lastTimestamp;
   uint256 private immutable i_interval;
+  uint256 private immutable i_entranceFee;
+  uint256 private s_lastTimestamp;
+  address private s_recentWinner;
+  address payable[] private s_players;
+  RaffleState private s_raffleState;
 
   /** Events */
-  event RaffleEnter(address indexed player);
   event RequestedRaffleWinner(uint256 indexed requestId);
-  event WinnerPicked(address indexed winner);
+  event RaffleEnter(address indexed player);
+  event WinnerPicked(address indexed player);
 
   /** Functions */
   constructor(
-    address vrfCoordinatorV2, // contract
+    address vrfCoordinatorV2address, // contract
     uint256 entranceFee,
     bytes32 gasLane,
     uint64 subscriptionId,
     uint32 callbackGasLimit,
     uint256 interval
-  ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+  ) VRFConsumerBaseV2(vrfCoordinatorV2address) {
+    i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2address);
     i_entranceFee = entranceFee;
-    i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
     i_gasLane = gasLane;
     i_subscriptionId = subscriptionId;
     i_callbackGasLimit = callbackGasLimit;
@@ -72,11 +71,11 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
   function enterRaffle() public payable {
     if (msg.value < i_entranceFee) {
-      revert Raffle__NotEnoughETHEntered();
+      revert Raffle__SendMoreToEnterRaffle();
     }
 
     if (s_raffleState != RaffleState.OPEN) {
-      revert Raffle__NotOpen();
+      revert Raffle__RaffleNotOpen();
     }
 
     s_players.push(payable(msg.sender));
@@ -96,17 +95,26 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     bytes memory /* checkData */
   )
     public
+    view
     override
     returns (bool upkeepNeeded, bytes memory /* performData */)
   {
-    bool isOpen = (RaffleState.OPEN == s_raffleState);
+    bool isOpen = RaffleState.OPEN == s_raffleState;
     bool timePassed = ((block.timestamp - s_lastTimestamp) > i_interval);
-    bool hasPlayers = (s_players.length > 0);
+    bool hasPlayers = s_players.length > 0;
     bool hasBalance = address(this).balance > 0;
-    upkeepNeeded = (isOpen && timePassed && hasPlayers && hasBalance);
-    return (upkeepNeeded, "0x0"); // can we comment this out?
+    upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
+
+    return (upkeepNeeded, "0x0");
   }
 
+  /**
+   * After you register the contract as an upkeep, the Chainlink Automation Network
+   * simulates our checkUpkeep off-chain during every block to determine if the updateInterval
+   * time has passed since the last increment (timestamp). When checkUpkeep returns true,
+   * the Chainlink Automation Network calls performUpkeep on-chain and increments the counter.
+   * This cycle repeats until the upkeep is cancelled or runs out of funding.
+   */
   function performUpkeep(bytes calldata /* performData */) external override {
     (bool upkeepNeeded, ) = checkUpkeep("");
 
@@ -128,6 +136,10 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
       NUM_WORDS
     );
 
+    /**
+     * It is redundant because an event is already been sended
+     * in the VRF contract
+     */
     emit RequestedRaffleWinner(requestId);
   }
 
@@ -180,7 +192,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     return s_players.length;
   }
 
-  function getLatesteTimestamp() public view returns (uint256) {
+  function getLastTimeStamp() public view returns (uint256) {
     return s_lastTimestamp;
   }
 
